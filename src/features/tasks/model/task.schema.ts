@@ -33,6 +33,11 @@ export const validateTaskDraft = (draft: TaskDraft) => {
       errors.schedule = "Укажите корректное число часов в день";
     }
   }
+  if (draft.schedule.mode === "selected_days") {
+    if (!draft.schedule.selectedDates || draft.schedule.selectedDates.length === 0) {
+      errors.schedule = "Выберите хотя бы один день";
+    }
+  }
 
   return errors;
 };

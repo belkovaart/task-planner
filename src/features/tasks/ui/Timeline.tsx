@@ -3,6 +3,7 @@ import {
   useMemo,
   useState,
   type CSSProperties,
+  type MouseEvent,
   type RefObject,
 } from "react";
 import {
@@ -18,6 +19,7 @@ import {
   computeOverlapBands,
   computeTimelineLayout,
   computeWorkload,
+  getTaskPlannedHoursByWorkingDate,
 } from "../model/task.selectors";
 import { STATUS, type Task } from "../model/task.types";
 import { Icon } from "./Icons";
@@ -26,6 +28,7 @@ interface TimelineProps {
   tasks: Task[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onEmptyClick: () => void;
   onDelete: (id: string) => Promise<void>;
   rangeStart: Date;
   rangeEnd: Date;
@@ -37,6 +40,7 @@ export default function Timeline({
   tasks,
   selectedId,
   onSelect,
+  onEmptyClick,
   onDelete,
   rangeStart,
   rangeEnd,
@@ -113,6 +117,18 @@ export default function Timeline({
   const todayLeft = daysBetween(rangeStart, today) * dayWidth + dayWidth / 2;
   const rowHeight = 36;
   const showToday = today >= rangeStart && today <= rangeEnd;
+  const handleBodyClick = (event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (
+      target.closest(".tl-bar") ||
+      target.closest(".tl-bar-group") ||
+      target.closest(".tl-overlap-band")
+    ) {
+      return;
+    }
+
+    onEmptyClick();
+  };
 
   return (
     <div className="tl-scroll" ref={timelineRef}>
@@ -174,7 +190,7 @@ export default function Timeline({
           </div>
         </div>
 
-        <div className="tl-body" style={{ height: laid.lanes * rowHeight + 8 }}>
+        <div className="tl-body" style={{ height: laid.lanes * rowHeight + 8 }} onClick={handleBodyClick}>
           {Array.from({ length: laid.lanes }).map((_, laneIdx) => (
             <div className="tl-row" key={laneIdx} style={{ height: rowHeight }}>
               {days.map((date, index) => (
@@ -190,12 +206,16 @@ export default function Timeline({
           {overlapBands.map((band, index) => (
             <div
               key={`band-${index}`}
-              className="tl-overlap-band"
+              className={`tl-overlap-band ${band.type}`}
               style={{
                 left: band.start * dayWidth,
                 width: (band.end - band.start + 1) * dayWidth,
               }}
-              title="Период с пересечениями задач"
+              title={
+                band.type === "hard"
+                  ? "Перегрузка: задач больше, чем помещается в рабочий день"
+                  : "Есть пересечение задач, но по часам день не перегружен"
+              }
             />
           ))}
 
@@ -211,6 +231,93 @@ export default function Timeline({
             const top = task.lane * rowHeight + 5;
             const isSelected = task.id === selectedId;
             const dim = selectedId && !isSelected;
+            const allocation = getTaskPlannedHoursByWorkingDate(task);
+            const visibleDates = Array.from(allocation.keys()).filter((date) => {
+              const parsed = parseISO(date);
+              return parsed >= rangeStart && parsed <= rangeEnd;
+            });
+            const isSelectedDaysTask =
+              task.schedule.mode === "selected_days" && visibleDates.length > 0;
+
+            if (isSelectedDaysTask) {
+              const sortedDates = visibleDates.sort();
+              const bridgeStart = parseISO(sortedDates[0]);
+              const bridgeEnd = parseISO(sortedDates[sortedDates.length - 1]);
+              const bridgeLeft = daysBetween(rangeStart, bridgeStart) * dayWidth + 3;
+              const bridgeWidth = Math.max(
+                (daysBetween(bridgeStart, bridgeEnd) + 1) * dayWidth - 6,
+                10,
+              );
+
+              return (
+                <div
+                  key={task.id}
+                  className={`tl-bar-group ${isSelected ? "selected" : ""} ${dim ? "dim" : ""}`}
+                  style={{ top }}
+                >
+                  <div
+                    className="tl-bar-bridge"
+                    data-status={task.status}
+                    style={{ left: bridgeLeft, width: bridgeWidth }}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelect(task.id);
+                    }}
+                    title={`${task.title} · ${fmtDateShort(originalStart)} → ${fmtDateShort(originalEnd)} · ${STATUS[task.status].label}`}
+                  />
+                  {sortedDates.map((date, index) => {
+                    const day = parseISO(date);
+                    const segmentLeft = daysBetween(rangeStart, day) * dayWidth + 3;
+                    const segmentWidth = Math.max(dayWidth - 6, 10);
+                    const showTitle = index === 0;
+
+                    return (
+                      <div
+                        key={`${task.id}-${date}`}
+                        className={`tl-bar tl-bar-segment ${isSelected ? "selected" : ""} ${dim ? "dim" : ""} ${segmentWidth < 80 ? "tight" : ""} ${segmentWidth < 48 ? "very-tight" : ""}`}
+                        data-status={task.status}
+                        style={
+                          {
+                            left: segmentLeft,
+                            width: segmentWidth,
+                            top: 0,
+                            "--bar-prio":
+                              task.priority === "high"
+                                ? "var(--p-high)"
+                                : task.priority === "med"
+                                  ? "var(--p-med)"
+                                  : "var(--p-low)",
+                          } as CSSProperties
+                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSelect(task.id);
+                        }}
+                        title={`${task.title} · ${fmtDateShort(day)} · ${allocation.get(date)}ч`}
+                      >
+                        <span className="bar-prio" />
+                        {showTitle && <span className="bar-title">{task.title}</span>}
+                        {showTitle && <span className="bar-meta">{task.effortHours}ч</span>}
+                        {showTitle && (
+                          <button
+                            className="bar-delete"
+                            title="Удалить задачу"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (window.confirm(`Удалить задачу «${task.title}»?`)) {
+                                void onDelete(task.id);
+                              }
+                            }}
+                          >
+                            <Icon.x />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }
 
             return (
               <div

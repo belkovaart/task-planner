@@ -16,7 +16,7 @@ import {
 } from "../../../shared/lib/calendar";
 import type { Task } from "./task.types";
 
-const getTaskPlannedHoursByWorkingDate = (task: Task) => {
+export const getTaskPlannedHoursByWorkingDate = (task: Task) => {
   const workingDates = getWorkingDatesInRange(parseISO(task.start), parseISO(task.end));
   if (workingDates.length === 0) return new Map<string, number>();
 
@@ -33,6 +33,17 @@ const getTaskPlannedHoursByWorkingDate = (task: Task) => {
       remaining -= planned;
     }
 
+    return allocation;
+  }
+
+  if (task.schedule.mode === "selected_days") {
+    const selectedDates = (task.schedule.selectedDates ?? []).filter((date) =>
+      workingDates.includes(date),
+    );
+    if (selectedDates.length === 0) return allocation;
+
+    const perDay = task.effortHours / selectedDates.length;
+    selectedDates.forEach((date) => allocation.set(date, perDay));
     return allocation;
   }
 
@@ -57,22 +68,24 @@ export const selectCounts = (tasks: Task[]) => {
 export const selectOverlappingIds = (tasks: Task[]) => {
   const ids = new Set<string>();
   const active = tasks.filter((task) => task.status !== "done");
+  const dates = new Set<string>();
 
-  for (let i = 0; i < active.length; i += 1) {
-    for (let j = i + 1; j < active.length; j += 1) {
-      const a = active[i];
-      const b = active[j];
-      const as = parseISO(a.start);
-      const ae = parseISO(a.end);
-      const bs = parseISO(b.start);
-      const be = parseISO(b.end);
+  active.forEach((task) => {
+    getTaskPlannedHoursByWorkingDate(task).forEach((_, date) => dates.add(date));
+  });
 
-      if (as <= be && bs <= ae) {
-        ids.add(a.id);
-        ids.add(b.id);
-      }
+  dates.forEach((date) => {
+    const tasksForDay = active.filter((task) => getTaskPlannedHoursByWorkingDate(task).has(date));
+    if (tasksForDay.length < 2) return;
+
+    const totalHours = tasksForDay.reduce((sum, task) => {
+      return sum + (getTaskPlannedHoursByWorkingDate(task).get(date) ?? 0);
+    }, 0);
+
+    if (totalHours > WORK_HOURS_PER_DAY) {
+      tasksForDay.forEach((task) => ids.add(task.id));
     }
-  }
+  });
 
   return ids;
 };
@@ -111,21 +124,31 @@ export const computeWorkload = (tasks: Task[], range: Date[]) =>
   });
 
 export const computeOverlapBands = (tasks: Task[], rangeStart: Date, rangeEnd: Date) => {
-  const bands: Array<{ start: number; end: number }> = [];
-  let current: { start: number; end: number } | null = null;
+  const bands: Array<{ start: number; end: number; type: "soft" | "hard" }> = [];
+  let current: { start: number; end: number; type: "soft" | "hard" } | null = null;
   const total = daysBetween(rangeStart, rangeEnd) + 1;
   const active = tasks.filter((task) => task.status !== "done");
 
   for (let i = 0; i < total; i += 1) {
     const day = addDays(rangeStart, i);
-    const load = active.filter((task) => day >= parseISO(task.start) && day <= parseISO(task.end)).length;
+    const iso = day.toISOString().slice(0, 10);
+    const tasksForDay = active.filter((task) => getTaskPlannedHoursByWorkingDate(task).has(iso));
+    const overlapping = tasksForDay.length >= 2;
 
-    if (load >= 2) {
-      if (!current) current = { start: i, end: i };
-      else current.end = i;
+    if (overlapping) {
+      const totalHours = tasksForDay.reduce((sum, task) => {
+        return sum + (getTaskPlannedHoursByWorkingDate(task).get(iso) ?? 0);
+      }, 0);
+      const type: "soft" | "hard" = totalHours > WORK_HOURS_PER_DAY ? "hard" : "soft";
+
+      if (!current) current = { start: i, end: i, type };
+      else if (current.type === type && current.end === i - 1) current.end = i;
+      else {
+        bands.push(current);
+        current = { start: i, end: i, type };
+      }
     } else if (current) {
-      bands.push(current);
-      current = null;
+      bands.push(current); current = null;
     }
   }
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Chips from "../../../shared/ui/Chips";
 import { addDays, fmtISO, pluralRu } from "../../../shared/lib/date";
+import { getWorkingDatesInRange } from "../../../shared/lib/calendar";
 import { makeTaskId } from "../../../shared/lib/ids";
 import { draftDurationDays, validateTaskDraft, type TaskDraft } from "../model/task.schema";
 import { PRIORITY, PRIORITY_ORDER, STATUS, STATUS_ORDER, type Task } from "../model/task.types";
@@ -26,6 +27,7 @@ const makeBlankDraft = (today: Date): TaskDraft => ({
   schedule: {
     mode: "auto",
     hoursPerDay: 3,
+    selectedDates: [],
   },
 });
 
@@ -64,6 +66,10 @@ export default function TaskForm({
   const estimateValue =
     estimateUnit === "days" ? Number(form.effortHours) / 5 : Number(form.effortHours);
   const effortTooltip = `${Number(form.effortHours)}ч / ${Number(form.effortHours) / 5}д`;
+  const workingDates = useMemo(
+    () => getWorkingDatesInRange(new Date(form.start), new Date(form.end)),
+    [form.end, form.start],
+  );
 
   const submit = async () => {
     setTouched(true);
@@ -137,7 +143,24 @@ export default function TaskForm({
             onChange={(event) => {
               const nextStart = event.target.value;
               const nextEnd = form.end < nextStart ? nextStart : form.end;
-              setForm({ ...form, start: nextStart, end: nextEnd });
+              const nextWorkingDates = getWorkingDatesInRange(
+                new Date(nextStart),
+                new Date(nextEnd),
+              );
+              setForm({
+                ...form,
+                start: nextStart,
+                end: nextEnd,
+                schedule:
+                  form.schedule.mode === "selected_days"
+                    ? {
+                        ...form.schedule,
+                        selectedDates: (form.schedule.selectedDates ?? []).filter((date) =>
+                          nextWorkingDates.includes(date),
+                        ),
+                      }
+                    : form.schedule,
+              });
             }}
           />
         </div>
@@ -148,7 +171,26 @@ export default function TaskForm({
             className={`input ${showErr("end") ? "error" : ""}`}
             value={form.end}
             min={form.start}
-            onChange={(event) => setForm({ ...form, end: event.target.value })}
+            onChange={(event) => {
+              const nextEnd = event.target.value;
+              const nextWorkingDates = getWorkingDatesInRange(
+                new Date(form.start),
+                new Date(nextEnd),
+              );
+              setForm({
+                ...form,
+                end: nextEnd,
+                schedule:
+                  form.schedule.mode === "selected_days"
+                    ? {
+                        ...form.schedule,
+                        selectedDates: (form.schedule.selectedDates ?? []).filter((date) =>
+                          nextWorkingDates.includes(date),
+                        ),
+                      }
+                    : form.schedule,
+              });
+            }}
           />
         </div>
       </div>
@@ -234,6 +276,24 @@ export default function TaskForm({
           >
             Часов в день
           </button>
+          <button
+            type="button"
+            className={form.schedule.mode === "selected_days" ? "active" : ""}
+            onClick={() =>
+              setForm({
+                ...form,
+                schedule: {
+                  mode: "selected_days",
+                  selectedDates:
+                    form.schedule.selectedDates && form.schedule.selectedDates.length > 0
+                      ? form.schedule.selectedDates
+                      : workingDates,
+                },
+              })
+            }
+          >
+            По дням
+          </button>
         </div>
       </div>
       {form.schedule.mode === "daily" && (
@@ -257,6 +317,45 @@ export default function TaskForm({
               })
             }
           />
+          {showErr("schedule") && <div className="error-msg">{errors.schedule}</div>}
+        </div>
+      )}
+      {form.schedule.mode === "selected_days" && (
+        <div className="field-group">
+          <label>
+            Дни работы <span className="hint">рабочие дни в периоде</span>
+          </label>
+          <div className="date-chips">
+            {workingDates.map((date) => {
+              const active = (form.schedule.selectedDates ?? []).includes(date);
+              const dateLabel = new Date(date).toLocaleDateString("ru-RU", {
+                day: "2-digit",
+                month: "2-digit",
+                weekday: "short",
+              });
+
+              return (
+                <button
+                  key={date}
+                  type="button"
+                  className={`date-chip ${active ? "active" : ""}`}
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      schedule: {
+                        ...form.schedule,
+                        selectedDates: active
+                          ? (form.schedule.selectedDates ?? []).filter((item) => item !== date)
+                          : [...(form.schedule.selectedDates ?? []), date],
+                      },
+                    })
+                  }
+                >
+                  {dateLabel}
+                </button>
+              );
+            })}
+          </div>
           {showErr("schedule") && <div className="error-msg">{errors.schedule}</div>}
         </div>
       )}

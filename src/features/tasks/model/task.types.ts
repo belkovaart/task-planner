@@ -1,10 +1,11 @@
 export type TaskStatus = "planned" | "progress" | "done" | "paused";
 export type TaskPriority = "low" | "med" | "high";
-export type TaskScheduleMode = "auto" | "daily";
+export type TaskScheduleMode = "auto" | "daily" | "selected_days";
 
 export interface TaskSchedule {
   mode: TaskScheduleMode;
   hoursPerDay?: number;
+  selectedDates?: string[];
 }
 
 export interface Task {
@@ -31,6 +32,7 @@ export interface DbTaskRow {
   priority: TaskPriority;
   schedule_mode?: TaskScheduleMode | null;
   daily_hours?: number | null;
+  selected_dates?: string[] | null;
 }
 
 export const STATUS = {

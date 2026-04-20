@@ -115,7 +115,12 @@ export default function App() {
     });
   };
 
-  const handleClear = () => setEditingId(null);
+  const clearTaskSelection = () => {
+    setEditingId(null);
+    setSelectedId(null);
+  };
+
+  const handleClear = () => clearTaskSelection();
 
   const handleSelectFromList = (id: string) => {
     setSelectedId(id);
@@ -215,7 +220,12 @@ export default function App() {
           editingTask={editingTask}
           today={today}
           onAdd={(task) => withMutationFeedback(() => addTask(task))}
-          onSave={(task) => withMutationFeedback(() => updateTask(task))}
+          onSave={(task) =>
+            withMutationFeedback(async () => {
+              await updateTask(task);
+              clearTaskSelection();
+            })
+          }
           onDelete={handleDelete}
           onClear={handleClear}
         />
@@ -284,6 +294,7 @@ export default function App() {
             tasks={visibleTasks}
             selectedId={selectedId}
             onSelect={handleSelectFromTimeline}
+            onEmptyClick={clearTaskSelection}
             onDelete={handleDelete}
             rangeStart={visibleRange.start}
             rangeEnd={visibleRange.end}

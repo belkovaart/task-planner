@@ -13,6 +13,7 @@ const fromDb = (row: DbTaskRow): Task => ({
   schedule: {
     mode: row.schedule_mode ?? "auto",
     hoursPerDay: row.daily_hours ?? undefined,
+    selectedDates: row.selected_dates ?? undefined,
   },
 });
 
@@ -28,6 +29,8 @@ const toDb = (task: Task) => ({
   priority: task.priority,
   schedule_mode: task.schedule.mode,
   daily_hours: task.schedule.mode === "daily" ? Number(task.schedule.hoursPerDay ?? 0) : null,
+  selected_dates:
+    task.schedule.mode === "selected_days" ? task.schedule.selectedDates ?? [] : null,
 });
 
 export const tasksRepository = {
