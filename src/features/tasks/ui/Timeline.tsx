@@ -243,11 +243,47 @@ export default function Timeline({
               const sortedDates = visibleDates.sort();
               const bridgeStart = parseISO(sortedDates[0]);
               const bridgeEnd = parseISO(sortedDates[sortedDates.length - 1]);
-              const bridgeLeft = daysBetween(rangeStart, bridgeStart) * dayWidth + 3;
-              const bridgeWidth = Math.max(
-                (daysBetween(bridgeStart, bridgeEnd) + 1) * dayWidth - 6,
-                10,
-              );
+              const bridgeSegments: Array<{ left: number; width: number; key: string }> = [];
+              let segmentStart: Date | null = null;
+
+              for (
+                let cursor = new Date(bridgeStart);
+                cursor <= bridgeEnd;
+                cursor.setDate(cursor.getDate() + 1)
+              ) {
+                const currentDay = new Date(cursor);
+                const workingDay = !isNonWorkingDay(currentDay);
+
+                if (workingDay && !segmentStart) {
+                  segmentStart = currentDay;
+                }
+
+                const nextDay = new Date(currentDay);
+                nextDay.setDate(nextDay.getDate() + 1);
+                const closesSegment =
+                  segmentStart && (!workingDay || nextDay > bridgeEnd || isNonWorkingDay(nextDay));
+
+                if (closesSegment) {
+                  const startDate = segmentStart;
+                  if (!startDate) continue;
+
+                  const segmentEnd = workingDay
+                    ? currentDay
+                    : new Date(currentDay.getTime() - 86400000);
+                  const left = daysBetween(rangeStart, startDate) * dayWidth + 3;
+                  const width = Math.max(
+                    (daysBetween(startDate, segmentEnd) + 1) * dayWidth - 6,
+                    10,
+                  );
+
+                  bridgeSegments.push({
+                    left,
+                    width,
+                    key: `${startDate.toISOString()}-${segmentEnd.toISOString()}`,
+                  });
+                  segmentStart = null;
+                }
+              }
 
               return (
                 <div
@@ -255,16 +291,19 @@ export default function Timeline({
                   className={`tl-bar-group ${isSelected ? "selected" : ""} ${dim ? "dim" : ""}`}
                   style={{ top }}
                 >
-                  <div
-                    className="tl-bar-bridge"
-                    data-status={task.status}
-                    style={{ left: bridgeLeft, width: bridgeWidth }}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onSelect(task.id);
-                    }}
-                    title={`${task.title} · ${fmtDateShort(originalStart)} → ${fmtDateShort(originalEnd)} · ${STATUS[task.status].label}`}
-                  />
+                  {bridgeSegments.map((segment) => (
+                    <div
+                      key={segment.key}
+                      className="tl-bar-bridge"
+                      data-status={task.status}
+                      style={{ left: segment.left, width: segment.width }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSelect(task.id);
+                      }}
+                      title={`${task.title} · ${fmtDateShort(originalStart)} → ${fmtDateShort(originalEnd)} · ${STATUS[task.status].label}`}
+                    />
+                  ))}
                   {sortedDates.map((date, index) => {
                     const day = parseISO(date);
                     const segmentLeft = daysBetween(rangeStart, day) * dayWidth + 3;

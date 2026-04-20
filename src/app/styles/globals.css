@@ -742,7 +742,7 @@ main.main-pane {
 .tl-day.holiday,
 .tl-wl-cell.holiday,
 .tl-row-cell.holiday {
-  background: #fff7e8;
+  background: #e2edf8;
 }
 
 .tl-day.weekend .num,

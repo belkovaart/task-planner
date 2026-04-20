@@ -2,6 +2,7 @@ import {
   addDays,
   daysBetween,
   fmtDateShort,
+  fmtISO,
   MONTHS_FULL,
   MONTHS_RU,
   parseISO,
@@ -114,7 +115,7 @@ export const selectRange = (tasks: Task[], today: Date) => {
 export const computeWorkload = (tasks: Task[], range: Date[]) =>
   range.map((day) => {
     if (isNonWorkingDay(day)) return 0;
-    const iso = day.toISOString().slice(0, 10);
+    const iso = fmtISO(day);
 
     return tasks.reduce((sum, task) => {
       if (task.status === "done") return sum;
@@ -131,7 +132,7 @@ export const computeOverlapBands = (tasks: Task[], rangeStart: Date, rangeEnd: D
 
   for (let i = 0; i < total; i += 1) {
     const day = addDays(rangeStart, i);
-    const iso = day.toISOString().slice(0, 10);
+    const iso = fmtISO(day);
     const tasksForDay = active.filter((task) => getTaskPlannedHoursByWorkingDate(task).has(iso));
     const overlapping = tasksForDay.length >= 2;
 
